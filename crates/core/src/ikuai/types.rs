@@ -146,7 +146,9 @@ impl IKuaiClient {
         let builder = reqwest::Client::builder()
             .cookie_store(true)
             .connect_timeout(Duration::from_secs(5))
-            .timeout(Duration::from_secs(30));
+            .timeout(Duration::from_secs(180))
+            .pool_idle_timeout(Duration::from_secs(10))
+            .pool_max_idle_per_host(2);
         // iKuai 通常是内网地址，这里强制直连，避免系统/自定义代理干扰。
         // iKuai is typically a LAN address; force direct connection.
         let client = builder.no_proxy().build()?;
@@ -164,7 +166,7 @@ impl IKuaiClient {
             "username": username,
         });
         let url = format!("{}/Action/login", self.base_url.trim_end_matches('/'));
-        let text = self.post_json_text(&url, &req).await?;
+        let text = self.post_json_text(&url, &req, true).await?;
         let resp: CallResp<serde_json::Value> = parse_call_response(&text)?;
         if resp.code != 0 {
             return Err(IKuaiError::Api(resp.message));
@@ -184,7 +186,8 @@ impl IKuaiClient {
             action: action.to_string(),
             param,
         };
-        let text = self.post_json_text(&url, &req).await?;
+        let retryable = !matches!(action, "add");
+        let text = self.post_json_text(&url, &req, retryable).await?;
         let resp: CallResp<TData> = parse_call_response(&text)?;
         if resp.code != 0 {
             return Err(IKuaiError::Api(resp.message.to_string()));
@@ -196,19 +199,36 @@ impl IKuaiClient {
         &self,
         url: &str,
         body: &T,
+        retryable: bool,
     ) -> Result<String, IKuaiError> {
-        let resp = self.client.post(url).json(body).send().await?;
-        let status = resp.status();
-        let text = resp.text().await?;
-        if !status.is_success() {
-            return Err(IKuaiError::Api(format!(
-                "http status {}: {}",
-                status,
-                trim_body(&text)
-            )));
+        const MAX_ATTEMPTS: usize = 3;
+        let attempts = if retryable { MAX_ATTEMPTS } else { 1 };
+        for attempt in 0..attempts {
+            match self.client.post(url).json(body).send().await {
+                Ok(resp) => {
+                    let status = resp.status();
+                    let text = resp.text().await?;
+                    if !status.is_success() {
+                        return Err(IKuaiError::Api(format!(
+                            "http status {}: {}",
+                            status,
+                            trim_body(&text)
+                        )));
+                    }
+                    return Ok(text);
+                }
+                Err(err) if attempt + 1 < attempts && is_retryable_transport_error(&err) => {
+                    tokio::time::sleep(Duration::from_secs((attempt as u64 + 1) * 2)).await;
+                }
+                Err(err) => return Err(IKuaiError::Http(err)),
+            }
         }
-        Ok(text)
+        Err(IKuaiError::InvalidResponse("request attempts exhausted".to_string()))
     }
+}
+
+fn is_retryable_transport_error(err: &reqwest::Error) -> bool {
+    err.is_timeout() || err.is_connect() || err.is_request()
 }
 
 fn parse_call_response<T: for<'de> Deserialize<'de>>(

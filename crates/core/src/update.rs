@@ -543,6 +543,41 @@ fn group(arr: Vec<String>, sub_len: usize) -> Vec<Vec<String>> {
     out
 }
 
+fn group_domains(arr: Vec<String>, max_records: usize) -> Vec<Vec<String>> {
+    const MAX_DOMAIN_PAYLOAD_BYTES: usize = 80 * 1024;
+    let max_records = max_records.max(1);
+    let mut groups = Vec::new();
+    let mut current = Vec::new();
+    let mut current_bytes = 0usize;
+
+    for domain in arr {
+        let encoded_len = serde_json::to_string(&domain)
+            .map(|value| value.len())
+            .unwrap_or_else(|_| domain.len().saturating_add(2));
+        let separator_len = if current.is_empty() { 0 } else { 1 };
+        let would_exceed_bytes = current_bytes
+            .saturating_add(encoded_len)
+            .saturating_add(separator_len)
+            > MAX_DOMAIN_PAYLOAD_BYTES;
+
+        if !current.is_empty() && (current.len() >= max_records || would_exceed_bytes) {
+            groups.push(current);
+            current = Vec::new();
+            current_bytes = 0;
+        }
+
+        current_bytes = current_bytes
+            .saturating_add(encoded_len)
+            .saturating_add(if current.is_empty() { 0 } else { 1 });
+        current.push(domain);
+    }
+
+    if !current.is_empty() {
+        groups.push(current);
+    }
+    groups
+}
+
 async fn sleep(d: Duration) {
     if d > Duration::from_millis(0) {
         tokio::time::sleep(d).await;
@@ -675,7 +710,7 @@ async fn update_stream_domain(
     }
 
     let mut map = ikuai::stream_domain::get_stream_domain_map(api, input.tag).await?;
-    let groups = group(domains, cfg.max_number_of_one_records.domain as usize);
+    let groups = group_domains(domains, cfg.max_number_of_one_records.domain as usize);
     for (i, chunk) in groups.iter().enumerate() {
         let index = (i + 1) as i64;
         let name = ikuai::tag_name::build_indexed_tag_name(input.tag, i as i64);
