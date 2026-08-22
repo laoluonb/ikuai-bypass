@@ -112,6 +112,7 @@ jobs:
           INPUT_PUSH_DOCKER: ${{ github.event.inputs.push_docker || 'true' }}
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
 
@@ -204,8 +205,12 @@ jobs:
           fi
 
           if [[ "${push_docker}" == "true" && "${docker_creds_available}" != "true" ]]; then
-            echo "Docker credentials are required when push_docker=true" >&2
-            exit 1
+            if [[ "${REPOSITORY}" == "joyanhui/ikuai-bypass" ]]; then
+              echo "Docker credentials are required for the upstream repository" >&2
+              exit 1
+            fi
+            echo "::warning::DockerHub credentials are unavailable for ${REPOSITORY}; skipping Docker push while continuing Release assets"
+            push_docker="false"
           fi
 
           {

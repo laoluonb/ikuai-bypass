@@ -7,6 +7,11 @@ nav_order: 5
 
 > 仅包含 Rust 版本（v4.4.100+）的更新记录。历史 Go 版本归档于 [v4.4.13](https://github.com/joyanhui/ikuai-bypass/releases/tag/v4.4.13)。
 
+## v4.4.110 (2026-08-22)
+
+- 修复大体积域名分流写入爱快 `Action/call` 超时问题：API 等待窗口提升至 180 秒，编辑/查询请求增加退避重试。
+- 域名规则同时按数量和 JSON 请求体大小自动分片，降低爱快固件处理大文件时卡住或请求失败的概率。
+
 ## v4.4.109 (2026-08-03)
 
 - 修复 iKuai 应用市场和 Docker 镜像默认时区未生效的问题，默认时区设为上海 (Asia/Shanghai)，支持在爱快应用市场自定义时区 [#145](https://github.com/joyanhui/ikuai-bypass/discussions/145) [#146](https://github.com/joyanhui/ikuai-bypass/issues/146)
