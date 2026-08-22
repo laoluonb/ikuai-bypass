@@ -1026,16 +1026,18 @@ jobs:
           source .github/scripts/arch-helpers.sh
           mkdir -p dist
 
-          if [ -z "${ANDROID_SIGNING_KEYSTORE_BASE64:-}" ] || [ -z "${ANDROID_SIGNING_PASSWORD:-}" ]; then
-            echo "Missing Android signing materials. Please set secrets ANDROID_SIGNING_KEYSTORE_BASE64 and ANDROID_SIGNING_PASSWORD." >&2
-            exit 1
-          fi
-
           unsigned_apk="$(find apps/gui/gen/android/app/build/outputs/apk -type f -name '*universal*release*unsigned.apk' | head -1 || true)"
           if [ -z "${unsigned_apk}" ]; then
             unsigned_apk="$(find apps/gui/gen/android/app/build/outputs/apk -type f -name '*release*unsigned.apk' | head -1 || true)"
           fi
           test -n "${unsigned_apk}"
+
+          if [ -z "${ANDROID_SIGNING_KEYSTORE_BASE64:-}" ] || [ -z "${ANDROID_SIGNING_PASSWORD:-}" ]; then
+            final_name="$(ikb_gui_native_name "${TARGET}" ".apk")"
+            cp "${unsigned_apk}" "dist/${final_name%.apk}-unsigned.apk"
+            echo "::warning::Android signing secrets are unavailable; publishing unsigned APK artifact"
+            exit 0
+          fi
 
           build_tools_dir="$(find "${ANDROID_HOME}/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
           zipalign_bin="${build_tools_dir}/zipalign"
