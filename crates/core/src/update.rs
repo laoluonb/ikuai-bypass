@@ -578,6 +578,20 @@ fn group_domains(arr: Vec<String>, max_records: usize) -> Vec<Vec<String>> {
     groups
 }
 
+fn normalize_domain_list(domains: &str) -> Vec<&str> {
+    let mut items: Vec<&str> = domains
+        .split(',')
+        .map(str::trim)
+        .filter(|domain| !domain.is_empty())
+        .collect();
+    items.sort_unstable();
+    items
+}
+
+fn domain_lists_equal(existing: &str, expected: &str) -> bool {
+    normalize_domain_list(existing) == normalize_domain_list(expected)
+}
+
 async fn sleep(d: Duration) {
     if d > Duration::from_millis(0) {
         tokio::time::sleep(d).await;
@@ -723,7 +737,21 @@ async fn update_stream_domain(
             domains: &joined,
             index: i as i64,
         };
-        let res = if let Some(id) = map.remove(&index) {
+        let res = if let Some((id, existing_domains)) = map.remove(&index) {
+            if domain_lists_equal(&existing_domains, &joined) {
+                domain_logger.info(
+                    "SKIP:内容未变化",
+                    format!(
+                        "[{}/{}] {} {}: {} unchanged, skipping",
+                        i + 1,
+                        groups.len(),
+                        input.iface,
+                        input.tag,
+                        name
+                    ),
+                );
+                continue;
+            }
             domain_logger.info(
                 "EDIT:正在修改",
                 format!(
@@ -772,7 +800,7 @@ async fn update_stream_domain(
 
     if !map.is_empty() {
         let mut extra = Vec::new();
-        for (idx, id) in map {
+        for (idx, (id, _)) in map {
             domain_logger.info(
                 "CLEAN:冗余删除",
                 format!(
@@ -797,6 +825,30 @@ async fn update_stream_domain(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::domain_lists_equal;
+
+    #[test]
+    fn unchanged_domain_lists_are_equal() {
+        assert!(domain_lists_equal("a.example,b.example", "a.example,b.example"));
+    }
+
+    #[test]
+    fn domain_order_and_whitespace_do_not_trigger_an_update() {
+        assert!(domain_lists_equal(
+            " b.example, a.example ",
+            "a.example,b.example"
+        ));
+    }
+
+    #[test]
+    fn changed_domain_lists_are_not_equal() {
+        assert!(!domain_lists_equal("a.example,b.example", "a.example,c.example"));
+        assert!(!domain_lists_equal("a.example", "a.example,a.example"));
+    }
 }
 
 async fn update_ip_group(

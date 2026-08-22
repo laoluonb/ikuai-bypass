@@ -187,7 +187,7 @@ pub async fn del_stream_domain(api: &IKuaiClient, id_csv: &str) -> Result<(), IK
 pub async fn get_stream_domain_map(
     api: &IKuaiClient,
     tag: &str,
-) -> Result<std::collections::HashMap<i64, i64>, IKuaiError> {
+) -> Result<std::collections::HashMap<i64, (i64, String)>, IKuaiError> {
     let data = show_stream_domain_by_tag_name(api, "").await?;
     let base = super::tag_name::build_tag_name(tag);
     let mut out = std::collections::HashMap::new();
@@ -197,7 +197,7 @@ pub async fn get_stream_domain_map(
         }
         let suffix = d.tag_name.trim().trim_start_matches(&base);
         if let Ok(idx) = suffix.parse::<i64>() {
-            out.insert(idx, d.id);
+            out.insert(idx, (d.id, d.domain));
         }
     }
     Ok(out)
