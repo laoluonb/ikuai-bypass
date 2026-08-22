@@ -207,7 +207,14 @@ impl IKuaiClient {
             match self.client.post(url).json(body).send().await {
                 Ok(resp) => {
                     let status = resp.status();
-                    let text = resp.text().await?;
+                    let text = match resp.text().await {
+                        Ok(text) => text,
+                        Err(err) if attempt + 1 < attempts && is_retryable_transport_error(&err) => {
+                            tokio::time::sleep(Duration::from_secs((attempt as u64 + 1) * 2)).await;
+                            continue;
+                        }
+                        Err(err) => return Err(IKuaiError::Http(err)),
+                    };
                     if !status.is_success() {
                         return Err(IKuaiError::Api(format!(
                             "http status {}: {}",
